@@ -1,14 +1,13 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
+import sqlite3
+
 
 app = FastAPI()
 
-tasks_db = [
-    {"id": 1, "title": "walk", "done": True},
-    {"id": 2, "title": "pet the dog", "done": False},
-    {"id": 3, "title": "watch youtube", "done": True},
-]
+tasks_db = sqlite3.connect("task.db", check_same_thread=False)
+tasks_db.row_factory = sqlite3.Row
 
 
 class TaskCreate(BaseModel):
@@ -32,15 +31,21 @@ def health():
 
 @app.get("/tasks")
 def get_tasks():
-    return tasks_db
+    cursor = tasks_db.cursor()
+    cursor.execute("SELECT * FROM tasks")
+    tasks = cursor.fetchall()
+    return [dict(task) for task in tasks]
 
 
 @app.get("/tasks/{task_id}")
 def get_task_by_id(task_id: int):
-    for task in tasks_db:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
+    cursor = tasks_db.cursor()
+    cursor.execute("SELECT * FROM tasks WHERE id = ?" , (task_id,))
+    tasks = cursor.fetchone()
+    if tasks is None: 
+        raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
+    return dict(tasks)
+    
 
 
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
@@ -48,10 +53,15 @@ def post_new_task(task: TaskCreate):
     if not task.title or not task.title.strip():
         raise HTTPException(status_code=400, detail={"error": "title is required"})
 
-    new_id = tasks_db[-1]["id"] + 1 if tasks_db else 1
-    new_task = {"id": new_id, "title": task.title.strip(), "done": False}
-    tasks_db.append(new_task)
+    cursor = tasks_db.cursor()
+    cursor.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)",
+        (task.title.strip(), False),
+    )
+    tasks_db.commit()
+    new_task = {"id": cursor.lastrowid, "title": task.title.strip(), "done": False}
     return new_task
+
 
 
 @app.put("/tasks/{task_id}")
