@@ -69,25 +69,40 @@ def put_task(task_id: int, update: TaskUpdate):
     if update.title is None and update.done is None:
         raise HTTPException(status_code=400, detail={"error": "nothing to update"})
 
-    if update.title is not None and not update.title.strip():
-        raise HTTPException(status_code=400, detail={"error": "title cannot be empty"})
+    if update.title is not None:
+        update.title = update.title.strip()
+        if not update.title:
+            raise HTTPException(status_code=400, detail={"error": "title is required"})
 
-    for task in tasks_db:
-        if task["id"] == task_id:
-            if update.title is not None:
-                task["title"] = update.title.strip()
-            if update.done is not None:
-                task["done"] = update.done
-            return task
+    sets, values = [], []
+    if update.title is not None:
+        sets.append("title = ?")
+        values.append(update.title)
+    if update.done is not None:
+        sets.append("done = ?")
+        values.append(update.done)
+    values.append(task_id)
 
-    raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
+    cursor = tasks_db.cursor()
+    cursor.execute(
+        f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",
+        values,
+    )
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
+
+    tasks_db.commit()
+    row = tasks_db.execute(
+        "SELECT * FROM tasks WHERE id = ?", (task_id,)
+    ).fetchone()
+    return dict(row)
 
 
 @app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: int):
-    for task in tasks_db:
-        if task["id"] == task_id:
-            tasks_db.remove(task)
-            return
+    cursor = tasks_db.cursor()
+    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    tasks_db.commit()
 
-    raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
