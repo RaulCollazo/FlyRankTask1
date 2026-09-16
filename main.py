@@ -2,9 +2,18 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
 import sqlite3
+from contextlib import asynccontextmanager
+
+from repository import init_db
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 tasks_db = sqlite3.connect("task.db", check_same_thread=False)
 tasks_db.row_factory = sqlite3.Row
