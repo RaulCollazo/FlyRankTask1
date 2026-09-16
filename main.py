@@ -1,10 +1,14 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
-import sqlite3
 from contextlib import asynccontextmanager
 
+from repository import create_task
+from repository import delete_task as delete_record
+from repository import get_task as fetch_task
+from repository import get_tasks as fetch_tasks
 from repository import init_db
+from repository import update_task
 
 
 @asynccontextmanager
@@ -14,9 +18,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-tasks_db = sqlite3.connect("task.db", check_same_thread=False)
-tasks_db.row_factory = sqlite3.Row
 
 
 class TaskCreate(BaseModel):
@@ -40,21 +41,15 @@ def health():
 
 @app.get("/tasks")
 def get_tasks():
-    cursor = tasks_db.cursor()
-    cursor.execute("SELECT * FROM tasks")
-    tasks = cursor.fetchall()
-    return [dict(task) for task in tasks]
+    return fetch_tasks()
 
 
 @app.get("/tasks/{task_id}")
 def get_task_by_id(task_id: int):
-    cursor = tasks_db.cursor()
-    cursor.execute("SELECT * FROM tasks WHERE id = ?" , (task_id,))
-    tasks = cursor.fetchone()
-    if tasks is None: 
-        raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
-    return dict(tasks)
-    
+    task = fetch_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail={"error": "Task not found"})
+    return task
 
 
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
@@ -62,15 +57,7 @@ def post_new_task(task: TaskCreate):
     if not task.title or not task.title.strip():
         raise HTTPException(status_code=400, detail={"error": "title is required"})
 
-    cursor = tasks_db.cursor()
-    cursor.execute(
-        "INSERT INTO tasks (title, done) VALUES (?, ?)",
-        (task.title.strip(), False),
-    )
-    tasks_db.commit()
-    new_task = {"id": cursor.lastrowid, "title": task.title.strip(), "done": False}
-    return new_task
-
+    return create_task(task.title.strip())
 
 
 @app.put("/tasks/{task_id}")
@@ -78,40 +65,17 @@ def put_task(task_id: int, update: TaskUpdate):
     if update.title is None and update.done is None:
         raise HTTPException(status_code=400, detail={"error": "nothing to update"})
 
-    if update.title is not None:
-        update.title = update.title.strip()
-        if not update.title:
-            raise HTTPException(status_code=400, detail={"error": "title is required"})
+    title = update.title.strip() if update.title is not None else None
+    if title is not None and not title:
+        raise HTTPException(status_code=400, detail={"error": "title is required"})
 
-    sets, values = [], []
-    if update.title is not None:
-        sets.append("title = ?")
-        values.append(update.title)
-    if update.done is not None:
-        sets.append("done = ?")
-        values.append(update.done)
-    values.append(task_id)
-
-    cursor = tasks_db.cursor()
-    cursor.execute(
-        f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",
-        values,
-    )
-    if cursor.rowcount == 0:
-        raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
-
-    tasks_db.commit()
-    row = tasks_db.execute(
-        "SELECT * FROM tasks WHERE id = ?", (task_id,)
-    ).fetchone()
-    return dict(row)
+    task = update_task(task_id, title=title, done=update.done)
+    if task is None:
+        raise HTTPException(status_code=404, detail={"error": "Task not found"})
+    return task
 
 
 @app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: int):
-    cursor = tasks_db.cursor()
-    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    tasks_db.commit()
-
-    if cursor.rowcount == 0:
-        raise HTTPException(status_code=404, detail={"error": f"Task {task_id} not found"})
+    if not delete_record(task_id):
+        raise HTTPException(status_code=404, detail={"error": "Task not found"})
