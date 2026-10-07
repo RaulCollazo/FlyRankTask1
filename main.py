@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -126,13 +126,7 @@ def extract_token(request: Request) -> str:
     return token
 
 
-@app.get("/public/info")
-def public_info():
-    return {"message": "Welcome stranger! This info is public."}
-
-
-@app.get("/protected/profile")
-def protected_profile(request: Request):
+def get_current_user(request: Request):
     token = extract_token(request)
     try:
         res = supabase.auth.get_user(token)
@@ -140,9 +134,32 @@ def protected_profile(request: Request):
         raise HTTPException(status_code=401, detail={"error": "Invalid or expired token"})
     if res is None or res.user is None:
         raise HTTPException(status_code=401, detail={"error": "Invalid or expired token"})
-    user = res.user
+    return res.user
+
+
+@app.get("/public/info")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile")
+def protected_profile(user=Depends(get_current_user)):
     return {
         "id": user.id,
         "email": user.email,
         "created_at": user.created_at,
     }
+
+
+@app.get("/protected/dashboard")
+def protected_dashboard(user=Depends(get_current_user)):
+    return {
+        "message": f"Welcome back, {user.email}",
+        "stats": {"tasks": len(fetch_tasks())},
+    }
+
+
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(user=Depends(get_current_user)):
+    supabase.auth.sign_out()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
