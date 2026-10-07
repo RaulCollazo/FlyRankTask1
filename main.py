@@ -1,4 +1,5 @@
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -116,20 +117,14 @@ def login(body: AuthBody):
     }
 
 
-def extract_token(request: Request) -> str:
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail={"error": "Access token required"})
-    token = auth.removeprefix("Bearer ").strip()
-    if not token:
-        raise HTTPException(status_code=401, detail={"error": "Access token required"})
-    return token
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def get_current_user(request: Request):
-    token = extract_token(request)
+def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(status_code=401, detail={"error": "Access token required"})
     try:
-        res = supabase.auth.get_user(token)
+        res = supabase.auth.get_user(credentials.credentials)
     except AuthApiError:
         raise HTTPException(status_code=401, detail={"error": "Invalid or expired token"})
     if res is None or res.user is None:
