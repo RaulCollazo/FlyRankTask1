@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -114,3 +114,24 @@ def login(body: AuthBody):
         "access_token": res.session.access_token,
         "refresh_token": res.session.refresh_token,
     }
+
+
+def extract_token(request: Request) -> str:
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail={"error": "Access token required"})
+    token = auth.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail={"error": "Access token required"})
+    return token
+
+
+@app.get("/public/info")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile")
+def protected_profile(request: Request):
+    extract_token(request)
+    return {"message": "Token presented (verification comes in Stage 3)"}
