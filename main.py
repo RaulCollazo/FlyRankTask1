@@ -133,5 +133,16 @@ def public_info():
 
 @app.get("/protected/profile")
 def protected_profile(request: Request):
-    extract_token(request)
-    return {"message": "Token presented (verification comes in Stage 3)"}
+    token = extract_token(request)
+    try:
+        res = supabase.auth.get_user(token)
+    except AuthApiError:
+        raise HTTPException(status_code=401, detail={"error": "Invalid or expired token"})
+    if res is None or res.user is None:
+        raise HTTPException(status_code=401, detail={"error": "Invalid or expired token"})
+    user = res.user
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at,
+    }
