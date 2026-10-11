@@ -1,0 +1,13 @@
+{
+  "name": "llm-parse-eval",
+  "cases": [
+    {"input": "buy milk #urgent", "expected": {"has_title": true, "valid_done": true}},
+    {"input": "clean the kitchen", "expected": {"has_title": true, "valid_done": true}},
+    {"input": "finish report by friday #work", "expected": {"has_title": true, "valid_done": true}},
+    {"input": "urgent call john", "expected": {"has_title": true, "valid_done": true}},
+    {"input": "read book low priority", "expected": {"has_title": true, "valid_done": true}},
+    {"input": "write tests #code #urgent", "expected": {"has_title": true, "valid_done": true}},
+    {"input": "pay bills", "expected": {"has_title": true, "valid_done": true}},
+    {"input": "walk dog medium priority", "expected": {"has_title": true, "valid_done": true}}
+  ]
+}

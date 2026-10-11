@@ -14,6 +14,7 @@ from repository import update_task
 from supabase_auth.errors import AuthApiError
 
 from supabase_client import supabase
+from llm import parse_messy_text, get_cost_log, clear_cost_log, KILL_SWITCH
 
 
 @asynccontextmanager
@@ -38,6 +39,16 @@ class TaskUpdate(BaseModel):
 class AuthBody(BaseModel):
     email: str = ""
     password: str = ""
+
+class MessyTextParseRequest(BaseModel):
+    text: str
+
+
+class ParsedTaskResponse(BaseModel):
+    title: str
+    done: bool
+    tags: Optional[list[str]] = None
+    priority: Optional[str] = None
 
 
 @app.get("/")
@@ -154,7 +165,31 @@ def protected_dashboard(user=Depends(get_current_user)):
     }
 
 
+
 @app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(user=Depends(get_current_user)):
     supabase.auth.sign_out()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@app.post("/llm/parse", response_model=ParsedTaskResponse)
+def parse_messy(messy: MessyTextParseRequest):
+    try:
+        result = parse_messy_text(messy.text)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"error": str(e)})
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail={"error": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Internal server error"})
+
+
+@app.get("/llm/costs")
+def llm_costs():
+    return {"costs": get_cost_log()}
+
+
+@app.post("/llm/costs/clear")
+def llm_costs_clear():
+    clear_cost_log()
+    return {"cleared": True}
